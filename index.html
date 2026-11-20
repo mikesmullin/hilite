@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>hilite — cite UI regions back to an agent</title>
+    <meta name="description" content="A single-file DOM inspector: press E, point, and copy a citation for whatever you are looking at." />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><text y='13' font-size='13'>🖍️</text></svg>" />
+    <style>
+      /* host tokens — the module's --hl-* tokens fall back into these, so the
+         inspector themes itself to this page with zero extra wiring */
+      :root {
+        --bg: #0f1419;
+        --panel: #1a2332;
+        --panel-2: #243044;
+        --border: #2d3a4f;
+        --text: #e7ecf3;
+        --muted: #8b9bb4;
+        --accent: #3b82f6;
+        --ok: #22c55e;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        --sans: ui-sans-serif, system-ui, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; background: var(--bg); color: var(--text);
+        font: 400 15px/1.6 var(--sans);
+      }
+      header {
+        padding: 18px 24px; border-bottom: 1px solid var(--border);
+        display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap;
+        position: sticky; top: 0; background: var(--bg);
+      }
+      header h1 { margin: 0; font: 600 18px/1 var(--sans); letter-spacing: .02em; }
+      header .tag { color: var(--muted); font-size: 13px; }
+      header .key {
+        margin-left: auto; font: 600 12px/1 var(--mono); color: var(--accent);
+        border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px;
+      }
+      main { max-width: 860px; margin: 0 auto; padding: 24px; display: grid; gap: 18px; }
+      h2 {
+        font: 600 11px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase;
+        color: var(--muted); margin: 10px 0 0;
+      }
+      .card {
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 10px; padding: 14px 16px;
+      }
+      .bubble {
+        border-radius: 10px; padding: 10px 14px; border: 1px solid var(--border);
+        background: var(--panel); margin-top: 8px;
+      }
+      .bubble.user { background: var(--panel-2); border-color: var(--accent); }
+      .bubble .who {
+        font: 600 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase;
+        color: var(--muted); margin-bottom: 6px;
+      }
+      code, pre { font-family: var(--mono); font-size: .92em; }
+      code { background: var(--panel-2); border-radius: 4px; padding: 1px 5px; }
+      pre {
+        background: #0a0e14; border: 1px solid var(--border); border-radius: 8px;
+        padding: 12px 14px; overflow-x: auto; line-height: 1.5;
+      }
+      table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+      th, td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--border); }
+      th { font: 600 10.5px/1.4 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+      td.num, th.num { text-align: right; font-family: var(--mono); }
+      .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 8px; }
+      button {
+        font: 500 13px/1 var(--sans); color: var(--text); background: var(--panel-2);
+        border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; cursor: pointer;
+      }
+      button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+      input, textarea {
+        font: 400 13.5px/1.5 var(--sans); color: var(--text); background: var(--bg);
+        border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; width: 100%;
+      }
+      dl.spec { display: grid; grid-template-columns: 110px 1fr; gap: 4px 12px; margin: 0; }
+      dl.spec dt { color: var(--muted); font: 500 12px/1.8 var(--mono); }
+      dl.spec dd { margin: 0; font-size: 13.5px; }
+      ul.checks { margin: 8px 0 0; padding: 0; list-style: none; }
+      ul.checks li { padding: 4px 0 4px 24px; position: relative; font-size: 14px; }
+      ul.checks li::before { content: "✓"; position: absolute; left: 4px; color: var(--ok); font-family: var(--mono); }
+      footer { padding: 18px 24px 30px; color: var(--muted); font-size: 13px; }
+      footer a { color: var(--accent); text-decoration: none; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>hilite</h1>
+      <span class="tag">single-file DOM inspector — point, and the agent knows what you mean</span>
+      <span class="key">press E</span>
+    </header>
+
+    <!-- #app is what hilite measures; everything above is the host page -->
+    <main id="app">
+      <h2>Try it</h2>
+      <div class="card">
+        <p style="margin:0">
+          Press <code>E</code> to arm the inspector, then <b>hover</b> anything below for a
+          reference card, <b>click</b> to cite one element, or <b>click+drag</b> to lasso a region.
+          The citation lands on your clipboard and the marked elements keep a
+          <code>.hilite</code> class on the DOM for the agent to find. Press <code>Esc</code> to disarm —
+          the marks stay, hidden, until you re-arm.
+        </p>
+      </div>
+
+      <h2>A transcript</h2>
+      <div class="card" id="transcript">
+        <div class="bubble user">
+          <div class="who">You</div>
+          Why is the latency spike on the <code>agentic-chat</code> route?
+        </div>
+        <div class="bubble">
+          <div class="who">Assistant</div>
+          <p style="margin:0 0 8px">
+            The spike correlates with the model list fetch: each turn re-queries
+            <code>/models</code> instead of reusing the cached manifest, and the endpoint
+            round-trips to the gateway on a cold cache.
+          </p>
+          <p style="margin:0">
+            The fix is a per-session manifest with a 30&nbsp;s TTL. P50 drops from
+            <code>412ms</code> to <code>96ms</code> in the local harness.
+          </p>
+        </div>
+      </div>
+
+      <h2>A source</h2>
+      <div class="card">
+        <p style="margin:0 0 8px; font-size:14px">
+          <b>manifest.ts</b> — the session manifest, cached per conversation:
+        </p>
+        <pre>const manifest = await fetch("/models", { cache: "force-cache" })
+  .then((r) => r.json());
+session.set("models", manifest.models, TTL_30S);</pre>
+      </div>
+
+      <h2>Models</h2>
+      <div class="card">
+        <table>
+          <thead>
+            <tr><th>model</th><th>context</th><th class="num">p50 latency</th><th class="num">tok/s</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>liquid-70b</td><td>262 144</td><td class="num">96 ms</td><td class="num">84</td></tr>
+            <tr><td>h2o-mini</td><td>32 768</td><td class="num">21 ms</td><td class="num">212</td></tr>
+            <tr><td>gate-3b</td><td>8 192</td><td class="num">9 ms</td><td class="num">390</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h2>A settings panel</h2>
+      <div class="card">
+        <dl class="spec">
+          <dt>session</dt><dd>s-0842 — sandbox b, branch <code>fix/manifest-ttl</code></dd>
+          <dt>route</dt><dd>/agentic-chat</dd>
+          <dt>policy</dt><dd>read-only until the spike is explained</dd>
+        </dl>
+        <div class="row">
+          <button class="primary">Adopt fix</button>
+          <button>Re-run harness</button>
+          <button>Escalate</button>
+        </div>
+      </div>
+
+      <h2>Notes</h2>
+      <div class="card">
+        <ul class="checks">
+          <li>Manifest is cached per session, not per turn</li>
+          <li>TTL of 30 s bounds how stale a model list can be</li>
+          <li>Cold-cache round trip is the only remaining variable</li>
+          <li>Gate model handles routing without touching the manifest</li>
+        </ul>
+      </div>
+    </main>
+
+    <footer>
+      one <code style="font-family:var(--mono)">&lt;script&gt;</code> tag, no build, no dependencies —
+      <a href="https://github.com/mikesmullin/hilite">github.com/mikesmullin/hilite</a> · MIT
+    </footer>
+
+    <script src="./hilite.js" data-hilite-root="#app"></script>
+  </body>
+</html>
