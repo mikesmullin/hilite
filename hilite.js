@@ -41,7 +41,7 @@
   "use strict";
   if (window.hilite) return window.hilite; // included twice: keep the first
 
-  const VERSION = "1.0.0";
+  const VERSION = "1.0.1";
   const MARK = "hilite";
   const UI_ATTR = "data-hilite-ui";
   const DRAG_THRESHOLD_PX = 4;
