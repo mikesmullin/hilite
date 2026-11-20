@@ -26,7 +26,8 @@ changes, so browsers don't keep serving a cached older generation.
 | `E`                | arm / disarm. Ignored while a form control has focus, so typing is never hijacked.       |
 | `Esc`              | disarm                                                                                   |
 | hover              | outline the candidate and fill the reference panel: url, xpath, tag, bounds, scroll, text |
-| click              | cite the hovered element into the current citation group — marks it `.hilite` and copies the aggregate fenced report |
+| click              | toggle the hovered element in/out of the current citation group — updates `.hilite` marks and copies the aggregate fenced report |
+| right-click (armed)| clear the current group's selection (marks and retained data) and copy the updated report |
 | `n` (while armed)  | clear the current selection and start the next citation group — citations already made are retained in the report |
 | click + drag       | lasso — the *outermost fully-contained* elements are added to the current group, marked `.hilite`, and the aggregate report goes to the clipboard |
 

@@ -19,9 +19,12 @@
 //   E            arm / disarm (ignored while a form control has focus)
 //   Esc          disarm
 //   hover        outline the candidate + fill the reference panel
-//   click        cite the hovered element into the current citation group:
-//                it gets .hilite and the aggregate report goes to the clipboard.
-//                Re-clicking an element already in the group is a no-op.
+//   click        toggle the hovered element in/out of the current citation group:
+//                a new element gets .hilite and the aggregate report goes to
+//                the clipboard; clicking a cited element removes it and re-copies.
+//   right-click  while armed: clear the current group's selection (its .hilite
+//                marks and its retained data) and copy the updated report.
+//                The group number does not advance — that is `n`'s job.
 //   n            while armed: clear the current selection (its .hilite marks)
 //                and move to the next citation group. Citations already made
 //                are retained in the report. Groups start at 1.
@@ -230,6 +233,46 @@ body.citing .${MARK} {
   let groups = new Map();
   let groupNo = 1;
 
+  // Remove one element from the current citation group (the toggle-off half
+  // of a click). Returns true when the element was cited. The group's header
+  // metadata is left alone — it still describes how the remaining elements
+  // got there.
+  function removeFromSelection(el) {
+    const g = groups.get(groupNo);
+    if (!g) return false;
+    const i = g.elements.findIndex((e) => e.el === el);
+    if (i === -1) return false;
+    g.elements.splice(i, 1);
+    el.classList.remove(MARK);
+    refreshHead();
+    return true;
+  }
+
+  // A right-click while armed is a gesture in our tool, never in the app: it
+  // clears the current group's selection — marks *and* retained data — and
+  // copies the updated report. The group number does not advance (that is
+  // `n`'s job). Right-clicks on our own panel are left alone so its text
+  // menu keeps working.
+  document.addEventListener(
+    "contextmenu",
+    async (e) => {
+      if (!armed) return;
+      if (e.target.closest(`[${UI_ATTR}]`)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const g = groups.get(groupNo);
+      if (!g || !g.elements.length) {
+        flash("nothing selected");
+        return;
+      }
+      for (const item of g.elements) item.el.classList.remove(MARK);
+      g.elements.length = 0;
+      refreshHead();
+      await copy();
+      flash(`group ${groupNo} cleared`);
+    },
+    true,
+  );
   // A completed lasso must survive the `click` the browser fires when the drag
   // ends. That click arrives *after* mouseup, by which point `drag` has already
   // been released, so a guard reading `drag.moved` is necessarily false by then
@@ -266,7 +309,7 @@ body.citing .${MARK} {
     '<div><dt>scroll</dt><dd class="f-scroll"></dd></div>' +
     '<div><dt>text</dt><dd class="f-text"></dd></div>' +
     "</dl>" +
-    '<div class="hilite-hint">click&nbsp;=&nbsp;cite &nbsp;·&nbsp; drag&nbsp;=&nbsp;lasso+copy &nbsp;·&nbsp; n&nbsp;=&nbsp;new group</div>';
+    '<div class="hilite-hint">click&nbsp;=&nbsp;toggle &nbsp;·&nbsp; right-click&nbsp;=&nbsp;clear &nbsp;·&nbsp; drag&nbsp;=&nbsp;lasso+copy &nbsp;·&nbsp; n&nbsp;=&nbsp;new group</div>';
 
   const lasso = ui("div", "hilite-lasso");
   const toast = ui("div", "hilite-toast");
@@ -728,9 +771,9 @@ body.citing .${MARK} {
 
   // A click while armed is a gesture in our tool, never in the app: stop the
   // SPA from navigating out from under the citation.
-  // A click cites one element into the current citation group and copies the
-  // aggregate report. Clearing is `n`'s job now (it also advances the group),
-  // so repeated clicks accumulate instead of wiping each other out.
+  // A click toggles one element in/out of the current citation group and
+  // copies the aggregate report. Clearing the whole group is right-click's
+  // job (`n` clears the marks while advancing the group).
   const selectable = (el) => {
     if (!(el instanceof Element) || el.closest(`[${UI_ATTR}]`)) return null;
     const r = root();
@@ -762,12 +805,14 @@ body.citing .${MARK} {
         flash("nothing to select here");
         return;
       }
-      const r = el.getBoundingClientRect();
-      addSelection(
-        "click",
-        { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
-        [el],
-      );
+      if (!removeFromSelection(el)) {
+        const r = el.getBoundingClientRect();
+        addSelection(
+          "click",
+          { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+          [el],
+        );
+      }
       await copy();
     },
     true,
@@ -859,9 +904,10 @@ body.citing .${MARK} {
     hilited: () => Array.from(document.querySelectorAll(`.${MARK}`)).map(xpath),
     selected: () => document.querySelectorAll(`.${MARK}`).length,
     help: () =>
-      `press ${cfg.key.toUpperCase()} to arm; hover for a reference. A click or lasso adds the ` +
-      `matched element(s) to the current citation group and copies the aggregate, triple-backticked ` +
-      `report to the clipboard. Press N while armed to clear the current selection and start the next ` +
+      `press ${cfg.key.toUpperCase()} to arm; hover for a reference. A click toggles the ` +
+      `hovered element in/out of the current citation group, a lasso adds its matches, and the ` +
+      `aggregate triple-backticked report goes to the clipboard. Right-click clears the current ` +
+      `group's selection. Press N while armed to clear the visible marks and start the next ` +
       `group (groups start at 1 and citations are retained in the report). Esc disarms — the current ` +
       `group's marks stay on the DOM but are hidden until you re-arm. window.hilite.last holds the ` +
       `last copy; window.hilite.report() rebuilds the (unfenced) report.`,
