@@ -209,6 +209,22 @@ body.citing .${MARK} {
     document.head.appendChild(s);
   }
 
+  // ── state ─────────────────────────────────────────────────────────────────
+
+  let armed = false;
+  let target = null; // hovered element
+  let drag = null; // {x0,y0,x,y,moved}
+  let lastCopy = null; // { text, count, at } of the last reference copied
+
+  // A completed lasso must survive the `click` the browser fires when the drag
+  // ends. That click arrives *after* mouseup, by which point `drag` has already
+  // been released, so a guard reading `drag.moved` is necessarily false by then
+  // and the click handler wipes the marks the lasso just painted -- the citation
+  // copies correctly while the page looks untouched, which is worse than failing
+  // loudly. The flag is set on release and consumed by that click, or expires.
+  let lassoJustFinished = false;
+  let lassoFlagTimer = 0;
+
   // ── ui ────────────────────────────────────────────────────────────────────
 
   function ui(tag, cls) {

@@ -9,13 +9,14 @@ to read back.
 No build, no dependencies, no framework — one `<script>` tag:
 
 ```html
-<script src="https://mikesmullin.github.io/hilite/hilite.js"
+<script src="https://mikesmullin.github.io/hilite/hilite.js?v=1"
         data-hilite-root="#app"></script>
 ```
 
 Cloud-hosted from this repo's GitHub Pages, or vendor a copy of `hilite.js` if
 the page must work offline. The script injects its own CSS, so nothing else
-from this repo is needed.
+from this repo is needed. Bump the `?v=` on the hosted URL whenever the module
+changes, so browsers don't keep serving a cached older generation.
 
 ## Usage
 
