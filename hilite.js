@@ -19,10 +19,14 @@
 //   E            arm / disarm (ignored while a form control has focus)
 //   Esc          disarm
 //   hover        outline the candidate + fill the reference panel
-//   click        no selection: cite the hovered element.
-//                selection present: clear every .hilite mark
-//   click+drag   lasso; the outermost fully-contained elements get .hilite
-//                and a plaintext reference block goes to the clipboard
+//   click        cite the hovered element into the current citation group:
+//                it gets .hilite and the aggregate report goes to the clipboard.
+//                Re-clicking an element already in the group is a no-op.
+//   n            while armed: clear the current selection (its .hilite marks)
+//                and move to the next citation group. Citations already made
+//                are retained in the report. Groups start at 1.
+//   click+drag   lasso; the outermost fully-contained elements are added to the
+//                current group, marked .hilite, and the report goes to the clipboard
 //
 // "Outermost fully-contained" is the rule that makes a lasso legible. Mark
 // every contained element and a lasso over a card paints the card *and* its
@@ -41,7 +45,7 @@
   "use strict";
   if (window.hilite) return window.hilite; // included twice: keep the first
 
-  const VERSION = "1.0.1";
+  const VERSION = "1.1.0";
   const MARK = "hilite";
   const UI_ATTR = "data-hilite-ui";
   const DRAG_THRESHOLD_PX = 4;
@@ -130,6 +134,7 @@ html.hilite-armed ::selection { background: transparent; }
   color: var(--hl-faint);
 }
 .hilite-count { color: var(--hl-mark); font-weight: 700; }
+.hilite-group { color: var(--hl-faint); font-weight: 400; margin-left: 6px; letter-spacing: .08em; }
 
 .hilite-dl { margin: 0; padding: 8px 10px 4px; display: grid; gap: 5px; }
 .hilite-dl > div { display: grid; grid-template-columns: 58px minmax(0,1fr); gap: 10px; align-items: baseline; }
@@ -216,6 +221,15 @@ body.citing .${MARK} {
   let drag = null; // {x0,y0,x,y,moved}
   let lastCopy = null; // { text, count, at } of the last reference copied
 
+  // Citation groups: every selection lands in the current group (groupNo).
+  // `n` clears the visible selection but keeps the retained data, then moves
+  // to the next group. The clipboard report is rebuilt from this data — never
+  // re-read from the live DOM — so cleared groups still render. Each element
+  // record keeps its node so repeated citations of the same node dedupe.
+  // group entry: { when, url, scroll:{x,y}, via, region:{l,t,r,b}, elements: [...] }
+  let groups = new Map();
+  let groupNo = 1;
+
   // A completed lasso must survive the `click` the browser fires when the drag
   // ends. That click arrives *after* mouseup, by which point `drag` has already
   // been released, so a guard reading `drag.moved` is necessarily false by then
@@ -243,7 +257,7 @@ body.citing .${MARK} {
 
   const panel = ui("div", "hilite-panel");
   panel.innerHTML =
-    '<div class="hilite-head"><span>hilite</span><b class="hilite-count"></b></div>' +
+    '<div class="hilite-head"><span>hilite<span class="hilite-group"></span></span><b class="hilite-count"></b></div>' +
     '<dl class="hilite-dl">' +
     '<div><dt>url</dt><dd class="f-url"></dd></div>' +
     '<div><dt>xpath</dt><dd class="f-xpath"></dd></div>' +
@@ -252,7 +266,7 @@ body.citing .${MARK} {
     '<div><dt>scroll</dt><dd class="f-scroll"></dd></div>' +
     '<div><dt>text</dt><dd class="f-text"></dd></div>' +
     "</dl>" +
-    '<div class="hilite-hint">click&nbsp;=&nbsp;clear &nbsp;·&nbsp; drag&nbsp;=&nbsp;lasso+copy</div>';
+    '<div class="hilite-hint">click&nbsp;=&nbsp;cite &nbsp;·&nbsp; drag&nbsp;=&nbsp;lasso+copy &nbsp;·&nbsp; n&nbsp;=&nbsp;new group</div>';
 
   const lasso = ui("div", "hilite-lasso");
   const toast = ui("div", "hilite-toast");
@@ -430,10 +444,27 @@ body.citing .${MARK} {
   // DOM after disarming -- that is the handle the agent reads -- but they are
   // only *visible* while body.citing is present, so disarming hides a
   // stale-looking highlight without destroying the citation.
-  const hasSelection = () => document.querySelectorAll(`.${MARK}`).length > 0;
 
   function setCount(k) {
     panel.querySelector(".hilite-count").textContent = k ? `${k} selected` : "";
+  }
+
+  function setGroup(no) {
+    const el = panel.querySelector(".hilite-group");
+    if (el) el.textContent = ` · group ${no}`;
+  }
+
+  const currentGroupEntry = () => groups.get(groupNo);
+  const currentCount = () => {
+    const g = currentGroupEntry();
+    return g ? g.elements.length : 0;
+  };
+
+  // The head always reflects the live citation state: how many elements the
+  // current group holds, and which group new selections will land in.
+  function refreshHead() {
+    setCount(currentCount());
+    setGroup(groupNo);
   }
 
   function clearHilite() {
@@ -443,35 +474,112 @@ body.citing .${MARK} {
 
   // ── clipboard ─────────────────────────────────────────────────────────────
 
-  function reference(hits, b, via) {
-    const lines = [
-      "hilite reference",
-      `url:     ${location.href}`,
-      `when:    ${new Date().toISOString()}`,
-      `tool:    hilite v${VERSION}`,
-      `scroll:  x=${n(scrollX)} y=${n(scrollY)}`,
-      `via:     ${via}`, // lasso | click
-      `region:  x=${n(b.left)} y=${n(b.top)} w=${n(b.right - b.left)} h=${n(b.bottom - b.top)}`,
-      `matched: ${hits.length} element(s) — .hilite applied in the DOM`,
-      "",
-    ];
-    hits.forEach((el, i) => {
-      const r = el.getBoundingClientRect();
-      const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+  // One metadata blob per element, captured at the moment it is cited. Because
+  // a citation is retained in the report even after its .hilite mark is cleared
+  // (by `n`), the report is rebuilt from this data — never re-read from the DOM.
+  function elInfo(el) {
+    const r = el.getBoundingClientRect();
+    const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+    return {
+      el,
+      xpath: xpath(el) || "—",
+      tag: tagOf(el),
+      bounds: `x=${n(r.left)} y=${n(r.top)} w=${n(r.width)} h=${n(r.height)}`,
+      text,
+    };
+  }
+
+  function currentGroup() {
+    let g = groups.get(groupNo);
+    if (!g) {
+      g = { when: 0, url: "", scroll: { x: 0, y: 0 }, via: "", region: null, elements: [] };
+      groups.set(groupNo, g);
+    }
+    return g;
+  }
+
+  // Add elements to the current citation group (idempotent per node) and
+  // reflect them as .hilite marks. The header metadata tracks the most recent
+  // selection in the group. Returns the number of newly added elements.
+  function addSelection(via, region, els) {
+    const g = currentGroup();
+    let added = 0;
+    for (const el of els) {
+      if (g.elements.some((e) => e.el === el)) continue;
+      el.classList.add(MARK);
+      g.elements.push(elInfo(el));
+      added++;
+    }
+    if (added) {
+      g.when = Date.now();
+      g.url = location.href;
+      g.scroll = { x: n(scrollX), y: n(scrollY) };
+      g.via = via;
+      g.region = region;
+    }
+    refreshHead();
+    return added;
+  }
+
+  // The aggregate citation: every non-empty group in group-number order.
+  // Groups are numbered by their group number (not re-indexed), so a skipped
+  // empty group keeps its number and the pasted report still reads (1), (2),
+  // (3), … as the user cited them.
+  function buildReport() {
+    const lines = ["# hilite reference", ""];
+    const nos = Array.from(groups.keys())
+      .filter((k) => groups.get(k) && groups.get(k).elements.length)
+      .sort((a, b) => a - b);
+    for (const no of nos) {
+      const g = groups.get(no);
       lines.push(
-        `[${i + 1}] xpath:  ${xpath(el)}`,
-        `    tag:    ${tagOf(el)}`,
-        `    bounds: x=${n(r.left)} y=${n(r.top)} w=${n(r.width)} h=${n(r.height)}`,
-        `    text:   ${JSON.stringify(
-          text.length > TEXT_SNIPPET ? text.slice(0, TEXT_SNIPPET) + "…" : text,
-        )}`,
+        `## [${no}] Citation Group`,
+        "",
+        `url:     ${g.url}`,
+        `when:    ${new Date(g.when).toISOString()}`,
+        `tool:    hilite v${VERSION}`,
+        `scroll:  x=${g.scroll.x} y=${g.scroll.y}`,
+        `via:     ${g.via}`,
+        `region:  x=${n(g.region.left)} y=${n(g.region.top)} w=${n(g.region.right - g.region.left)} h=${n(g.region.bottom - g.region.top)}`,
+        `matched: ${g.elements.length} element(s) — .hilite applied in the DOM`,
         "",
       );
-    });
+      for (const e of g.elements) {
+        lines.push(
+          `- xpath:  ${e.xpath}`,
+          `  tag:    ${e.tag}`,
+          `  bounds: ${e.bounds}`,
+          `  text:   ${JSON.stringify(
+            e.text.length > TEXT_SNIPPET ? e.text.slice(0, TEXT_SNIPPET) + "…" : e.text,
+          )}`,
+        );
+      }
+      lines.push("");
+    }
     return lines.join("\n");
   }
 
-  async function copy(text, count) {
+  const fence = (text) => "```\n" + text.trimEnd() + "\n```";
+
+  function presentGroupCount() {
+    let c = 0;
+    for (const g of groups.values()) if (g.elements.length) c++;
+    return c;
+  }
+
+  function totalElementCount() {
+    let t = 0;
+    for (const g of groups.values()) t += g.elements.length;
+    return t;
+  }
+
+  // Build the aggregate report from the retained groups, wrap it in
+  // triple-backticks, and put that fenced block on the clipboard.
+  async function copy() {
+    const report = buildReport();
+    const text = fence(report);
+    const count = totalElementCount();
+    const gc = presentGroupCount();
     lastCopy = { text, count, at: Date.now() };
     try {
       await navigator.clipboard.writeText(text);
@@ -491,8 +599,8 @@ body.citing .${MARK} {
     }
     flash(
       count
-        ? `copied ${count} reference${count === 1 ? "" : "s"}`
-        : "lasso matched nothing — click to clear",
+        ? `copied ${count} element${count === 1 ? "" : "s"} · ${gc} group${gc === 1 ? "" : "s"}`
+        : "no elements cited yet — click or drag to start",
     );
   }
 
@@ -520,7 +628,7 @@ body.citing .${MARK} {
     set(".f-scroll", `x=${n(scrollX)} y=${n(scrollY)}`);
     set(".f-text", "hover something…");
     // A selection from before is still live, so report its true count, not 0.
-    setCount(document.querySelectorAll(`.${MARK}`).length);
+    refreshHead();
   }
 
   function disarm() {
@@ -554,13 +662,33 @@ body.citing .${MARK} {
         disarm();
         return;
       }
-      if (e.key.toLowerCase() !== cfg.key) return;
+      const key = e.key.toLowerCase();
+      // `n` starts the next citation group: the visible selection is cleared
+      // but the retained citations stay in the report. Only while armed, and
+      // never while typing. When the arm key itself is `n`, arming wins.
+      if (key === "n" && key !== cfg.key && armed) {
+        if (inForm(e.target) || inForm(document.activeElement)) return;
+        e.preventDefault();
+        nextGroup();
+        return;
+      }
+      if (key !== cfg.key) return;
       if (inForm(e.target) || inForm(document.activeElement)) return; // typing, not pointing
       e.preventDefault();
       armed ? disarm() : arm();
     },
     true,
   );
+
+  function nextGroup() {
+    // Clear the visible selection (its .hilite marks); the citation data is
+    // retained in `groups`, so the already-copied report still contains it.
+    // The next selection starts a new group with the incremented number.
+    groupNo++;
+    clearHilite();
+    refreshHead(); // show the new (empty) group
+    flash(`group ${groupNo} — selection cleared`);
+  }
 
   document.addEventListener(
     "mousemove",
@@ -600,10 +728,9 @@ body.citing .${MARK} {
 
   // A click while armed is a gesture in our tool, never in the app: stop the
   // SPA from navigating out from under the citation.
-  // A click is one gesture with two meanings, decided by whether a selection
-  // already exists: with marks present it is "clear"; with none it is "take
-  // this one element", which is the fast path for citing a single field and
-  // the reason a hover outline exists at all.
+  // A click cites one element into the current citation group and copies the
+  // aggregate report. Clearing is `n`'s job now (it also advances the group),
+  // so repeated clicks accumulate instead of wiping each other out.
   const selectable = (el) => {
     if (!(el instanceof Element) || el.closest(`[${UI_ATTR}]`)) return null;
     const r = root();
@@ -621,15 +748,10 @@ body.citing .${MARK} {
       if (e.target.closest(`[${UI_ATTR}]`)) return;
       e.preventDefault();
       e.stopPropagation();
-      // The trailing click of a lasso is neither a clear nor a new selection.
+      // The trailing click of a lasso is not a new selection.
       if (lassoJustFinished) {
         lassoJustFinished = false;
         clearTimeout(lassoFlagTimer);
-        return;
-      }
-      if (hasSelection()) {
-        clearHilite();
-        flash("cleared");
         return;
       }
       // Prefer the element the hover outline is on -- that is the one the user
@@ -641,12 +763,12 @@ body.citing .${MARK} {
         return;
       }
       const r = el.getBoundingClientRect();
-      el.classList.add(MARK);
-      setCount(1);
-      await copy(
-        reference([el], { left: r.left, top: r.top, right: r.right, bottom: r.bottom }, "click"),
-        1,
+      addSelection(
+        "click",
+        { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+        [el],
       );
+      await copy();
     },
     true,
   );
@@ -658,7 +780,7 @@ body.citing .${MARK} {
       if (e.target.closest(`[${UI_ATTR}]`)) return; // panel is interactive; don't lasso from it
       e.preventDefault();
       // A fresh press supersedes any unconsumed flag, so a click that never
-      // fired cannot swallow this gesture's clear.
+      // fired cannot swallow this gesture.
       lassoJustFinished = false;
       clearTimeout(lassoFlagTimer);
       drag = { x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, moved: false };
@@ -675,19 +797,19 @@ body.citing .${MARK} {
       if (!d.moved) return; // a plain click: the click handler owns that case
       lasso.classList.remove("show");
       const hits = lassoHits(d.x0, d.y0, e.clientX, e.clientY);
-      clearHilite();
-      for (const el of hits) el.classList.add(MARK);
-      setCount(hits.length);
       // Guard the click the browser is about to fire for this same drag.
       lassoJustFinished = true;
       clearTimeout(lassoFlagTimer);
       lassoFlagTimer = setTimeout(() => {
         lassoJustFinished = false;
       }, 350);
-      await copy(
-        reference(hits, boxFrom(d.x0, d.y0, e.clientX, e.clientY), "lasso"),
-        hits.length,
-      );
+      if (!hits.length) {
+        flash("lasso matched nothing — click to cite");
+        return;
+      }
+      // Accumulate: earlier selections in this group keep their marks.
+      addSelection("lasso", boxFrom(d.x0, d.y0, e.clientX, e.clientY), hits);
+      await copy();
     },
     true,
   );
@@ -723,18 +845,32 @@ body.citing .${MARK} {
     get last() {
       return lastCopy;
     },
+    get group() {
+      return groupNo;
+    },
+    report: () => buildReport(),
+    reset() {
+      groups = new Map();
+      groupNo = 1;
+      clearHilite();
+      refreshHead();
+      return window.hilite;
+    },
     hilited: () => Array.from(document.querySelectorAll(`.${MARK}`)).map(xpath),
     selected: () => document.querySelectorAll(`.${MARK}`).length,
     help: () =>
-      `press ${cfg.key.toUpperCase()} to arm; hover for a reference; with no selection a click cites ` +
-      "the hovered element (marks it .hilite and copies a reference), and with a selection a click " +
-      "clears it; click+drag lassos, marks .hilite and copies. Marks stay on the DOM when disarmed " +
-      "but are hidden until you re-arm. window.hilite.last holds the last copy.",
+      `press ${cfg.key.toUpperCase()} to arm; hover for a reference. A click or lasso adds the ` +
+      `matched element(s) to the current citation group and copies the aggregate, triple-backticked ` +
+      `report to the clipboard. Press N while armed to clear the current selection and start the next ` +
+      `group (groups start at 1 and citations are retained in the report). Esc disarms — the current ` +
+      `group's marks stay on the DOM but are hidden until you re-arm. window.hilite.last holds the ` +
+      `last copy; window.hilite.report() rebuilds the (unfenced) report.`,
   };
 
   if (cfg.enabled)
     console.info(
-      `hilite v${VERSION}: press ${cfg.key.toUpperCase()} to inspect and cite, Esc to exit. window.hilite for the API.`,
+      `hilite v${VERSION}: press ${cfg.key.toUpperCase()} to inspect and cite, N for the next citation ` +
+        "group, Esc to exit. window.hilite for the API.",
     );
   else
     console.info(
