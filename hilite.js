@@ -16,7 +16,8 @@
 //   data-hilite-enabled  "0" disables. localStorage "hilite"="0" also does.
 //
 // Contract:
-//   E            arm / disarm (ignored while a form control has focus)
+//   E            arm / disarm (ignored while a form control has focus).
+//                Either direction clears all selections and resets to group 1.
 //   Esc          disarm
 //   hover        outline the candidate + fill the reference panel
 //   click        toggle the hovered element in/out of the current citation group:
@@ -515,6 +516,15 @@ body.citing .${MARK} {
     setCount(0);
   }
 
+  // Fresh start: drop every mark and every retained group, back to group 1.
+  // The E toggle calls this in both directions; Esc and API disarm preserve.
+  function resetState() {
+    groups = new Map();
+    groupNo = 1;
+    clearHilite();
+    refreshHead();
+  }
+
   // ── clipboard ─────────────────────────────────────────────────────────────
 
   // One metadata blob per element, captured at the moment it is cited. Because
@@ -718,6 +728,9 @@ body.citing .${MARK} {
       if (key !== cfg.key) return;
       if (inForm(e.target) || inForm(document.activeElement)) return; // typing, not pointing
       e.preventDefault();
+      // Either direction of the toggle starts fresh: closing or opening the
+      // dialog clears every selection and resets to group 1.
+      resetState();
       armed ? disarm() : arm();
     },
     true,
@@ -895,22 +908,20 @@ body.citing .${MARK} {
     },
     report: () => buildReport(),
     reset() {
-      groups = new Map();
-      groupNo = 1;
-      clearHilite();
-      refreshHead();
+      resetState();
       return window.hilite;
     },
     hilited: () => Array.from(document.querySelectorAll(`.${MARK}`)).map(xpath),
     selected: () => document.querySelectorAll(`.${MARK}`).length,
     help: () =>
-      `press ${cfg.key.toUpperCase()} to arm; hover for a reference. A click toggles the ` +
-      `hovered element in/out of the current citation group, a lasso adds its matches, and the ` +
-      `aggregate triple-backticked report goes to the clipboard. Right-click clears the current ` +
-      `group's selection. Press N while armed to clear the visible marks and start the next ` +
-      `group (groups start at 1 and citations are retained in the report). Esc disarms — the current ` +
-      `group's marks stay on the DOM but are hidden until you re-arm. window.hilite.last holds the ` +
-      `last copy; window.hilite.report() rebuilds the (unfenced) report.`,
+      `press ${cfg.key.toUpperCase()} to arm or disarm — either direction clears all selections ` +
+      `and resets to group 1. Hover for a reference. A click toggles the hovered element in/out ` +
+      `of the current citation group, a lasso adds its matches, and the aggregate triple-backticked ` +
+      `report goes to the clipboard. Right-click clears the current group's selection. Press N while ` +
+      `armed to clear the visible marks and start the next group (citations are retained in the ` +
+      `report). Esc disarms but keeps the current group's marks on the DOM, hidden (E re-arms ` +
+      `fresh). window.hilite.last holds the last copy; window.hilite.report() rebuilds the ` +
+      `(unfenced) report.`,
   };
 
   if (cfg.enabled)

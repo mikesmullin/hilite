@@ -23,8 +23,8 @@ changes, so browsers don't keep serving a cached older generation.
 
 | gesture            | effect                                                                                  |
 | ------------------ | --------------------------------------------------------------------------------------- |
-| `E`                | arm / disarm. Ignored while a form control has focus, so typing is never hijacked.       |
-| `Esc`              | disarm                                                                                   |
+| `E`                | arm / disarm — either direction clears all selections and resets to group 1. Ignored while a form control has focus, so typing is never hijacked. |
+| `Esc`              | disarm, keeping selections hidden (E re-arms fresh)                                       |
 | hover              | outline the candidate and fill the reference panel: url, xpath, tag, bounds, scroll, text |
 | click              | toggle the hovered element in/out of the current citation group — updates `.hilite` marks and copies the aggregate fenced report |
 | right-click (armed)| clear the current group's selection (marks and retained data) and copy the updated report |
