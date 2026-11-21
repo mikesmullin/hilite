@@ -137,6 +137,15 @@ highlight colour) to override.
   current group; `n` clears the visible marks and advances the group number.
   The report is rebuilt from the retained per-element data — never re-read
   from the live DOM — so a cleared group still renders exactly as cited.
+- **Click cites what the panel shows.** Single-element click is not scoped to
+  the lasso root and does not require text, so toolbar buttons, icon-only
+  buttons, and elements outside `#app` cite just like anything else. Hover
+  and click can never disagree, so a described element is always citable.
+  The lasso stays root-scoped.
+- **Lasso falls back to textless elements.** The first pass matches only
+  elements with rendered text; when that finds nothing, a second pass
+  matches the outermost fully-contained elements regardless of text, so
+  an icon-only button lassos to the button instead of to nothing.
 - **Clipboard with a fallback.** `navigator.clipboard` needs a secure context
   and focus; a textarea + `execCommand` path covers the rest, and
   `window.hilite.last` keeps the reference retrievable either way.

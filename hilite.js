@@ -49,7 +49,7 @@
   "use strict";
   if (window.hilite) return window.hilite; // included twice: keep the first
 
-  const VERSION = "1.1.0";
+  const VERSION = "1.1.1";
   const MARK = "hilite";
   const UI_ATTR = "data-hilite-ui";
   const DRAG_THRESHOLD_PX = 4;
@@ -441,8 +441,20 @@ body.citing .${MARK} {
     };
   }
 
-  // The outermost fully-contained elements with rendered text.
+  // The outermost fully-contained elements with rendered text — or, when
+  // nothing in the box has any, the outermost fully-contained elements
+  // regardless of text. The second pass only runs on an empty first pass,
+  // so every lasso that matches today matches exactly as before; the only
+  // behavior change is the empty case. Without it, icon-only controls
+  // (a bell button whose subtree is all `<i>` glyphs) lasso to nothing,
+  // while a click on the same button cites fine — and the hover outline
+  // and the lasso must agree the way hover and click already do.
   function lassoHits(x0, y0, x1, y1) {
+    const hits = collectLasso(x0, y0, x1, y1, true);
+    return hits.length ? hits : collectLasso(x0, y0, x1, y1, false);
+  }
+
+  function collectLasso(x0, y0, x1, y1, requireText) {
     const b = boxFrom(x0, y0, x1, y1);
     const r = root();
     if (!r) return [];
@@ -453,7 +465,7 @@ body.citing .${MARK} {
       if (t === "SCRIPT" || t === "STYLE" || t === "LINK" || t === "META") continue;
       const rect = el.getBoundingClientRect();
       if (rect.width < 1 || rect.height < 1) continue;
-      if (!(el.innerText || el.textContent || "").trim()) continue;
+      if (requireText && !(el.innerText || el.textContent || "").trim()) continue;
       if (inside(rect, b)) contained.add(el);
     }
     const hits = [];
@@ -787,13 +799,16 @@ body.citing .${MARK} {
   // A click toggles one element in/out of the current citation group and
   // copies the aggregate report. Clearing the whole group is right-click's
   // job (`n` clears the marks while advancing the group).
+  // A click cites whatever the panel describes: any real element with a
+  // measurable box. The hover outline and the click must agree — describing
+  // an element the click then refuses with "nothing to select here" is the
+  // bug. So there is no text requirement (icon buttons cite fine with an
+  // empty `text`) and no lasso-root scoping here; the root knob scopes the
+  // lasso, not the single-element fast path.
   const selectable = (el) => {
     if (!(el instanceof Element) || el.closest(`[${UI_ATTR}]`)) return null;
-    const r = root();
-    if (!r || !r.contains(el)) return null;
     const rect = el.getBoundingClientRect();
     if (rect.width < 1 || rect.height < 1) return null;
-    if (!(el.innerText || el.textContent || "").trim()) return null;
     return el;
   };
 
