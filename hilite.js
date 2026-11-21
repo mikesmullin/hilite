@@ -23,6 +23,10 @@
 //   click        toggle the hovered element in/out of the current citation group:
 //                a new element gets .hilite and the aggregate report goes to
 //                the clipboard; clicking a cited element removes it and re-copies.
+//   enter/space  while armed: cite whatever the hover outline is on. The
+//                mouse never reaches a disabled control (the browser
+//                suppresses its presses), so this is how disabled buttons
+//                and inputs get cited. Never fires while typing.
 //   right-click  while armed: clear the current group's selection (its .hilite
 //                marks and its retained data) and copy the updated report.
 //                The group number does not advance — that is `n`'s job.
@@ -49,7 +53,7 @@
   "use strict";
   if (window.hilite) return window.hilite; // included twice: keep the first
 
-  const VERSION = "1.1.2";
+  const VERSION = "1.1.3";
   const MARK = "hilite";
   const UI_ATTR = "data-hilite-ui";
   const DRAG_THRESHOLD_PX = 4;
@@ -310,7 +314,7 @@ body.citing .${MARK} {
     '<div><dt>scroll</dt><dd class="f-scroll"></dd></div>' +
     '<div><dt>text</dt><dd class="f-text"></dd></div>' +
     "</dl>" +
-    '<div class="hilite-hint">click&nbsp;=&nbsp;toggle &nbsp;·&nbsp; right-click&nbsp;=&nbsp;clear &nbsp;·&nbsp; drag&nbsp;=&nbsp;lasso+copy &nbsp;·&nbsp; n&nbsp;=&nbsp;new group</div>';
+    '<div class="hilite-hint">click&nbsp;=&nbsp;toggle &nbsp;·&nbsp; enter&nbsp;=&nbsp;cite hovered &nbsp;·&nbsp; right-click&nbsp;=&nbsp;clear &nbsp;·&nbsp; drag&nbsp;=&nbsp;lasso+copy &nbsp;·&nbsp; n&nbsp;=&nbsp;new group</div>';
 
   const lasso = ui("div", "hilite-lasso");
   const toast = ui("div", "hilite-toast");
@@ -737,6 +741,32 @@ body.citing .${MARK} {
         nextGroup();
         return;
       }
+      // Enter/Space cites whatever the hover outline is on. Mouse presses
+      // never reach a disabled control — the browser suppresses mousedown,
+      // mouseup and click on them entirely, so no click handler can fire —
+      // but hover still tracks them, which means the outline can sit on a
+      // button a click could never cite. The keyboard has no such gate, so
+      // outline + Enter selects disabled buttons, disabled inputs and any
+      // other element a press cannot reach. Never while typing.
+      if ((key === "enter" || key === " ") && armed) {
+        if (inForm(e.target) || inForm(document.activeElement)) return;
+        e.preventDefault();
+        const el = selectable(target);
+        if (!el) {
+          flash("hover something to cite");
+          return;
+        }
+        if (!removeFromSelection(el)) {
+          const r = el.getBoundingClientRect();
+          addSelection(
+            "key",
+            { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+            [el],
+          );
+        }
+        copy();
+        return;
+      }
       if (key !== cfg.key) return;
       if (inForm(e.target) || inForm(document.activeElement)) return; // typing, not pointing
       e.preventDefault();
@@ -975,7 +1005,8 @@ body.citing .${MARK} {
     help: () =>
       `press ${cfg.key.toUpperCase()} to arm or disarm — either direction clears all selections ` +
       `and resets to group 1. Hover for a reference. A click toggles the hovered element in/out ` +
-      `of the current citation group, a lasso adds its matches, and the aggregate triple-backticked ` +
+      `of the current citation group (Enter/Space cites it too — the only way to cite a ` +
+      `disabled control, whose clicks the browser swallows), a lasso adds its matches, and the aggregate triple-backticked ` +
       `report goes to the clipboard. Right-click clears the current group's selection. Press N while ` +
       `armed to clear the visible marks and start the next group (citations are retained in the ` +
       `report). Esc disarms but keeps the current group's marks on the DOM, hidden (E re-arms ` +
