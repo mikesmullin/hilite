@@ -140,7 +140,10 @@ highlight colour) to override.
 - **Click cites what the panel shows.** Single-element click is not scoped to
   the lasso root and does not require text, so toolbar buttons, icon-only
   buttons, and elements outside `#app` cite just like anything else. Hover
-  and click can never disagree, so a described element is always citable.
+  and click can never disagree, so a described element is always citable —
+  the click trusts the hovered outline within a few pixels, so a press that
+  slips off a pill button's rounded corner (or a live re-layout under a
+  still cursor) still cites the button, not the row behind it.
   The lasso stays root-scoped.
 - **Lasso falls back to textless elements.** The first pass matches only
   elements with rendered text; when that finds nothing, a second pass

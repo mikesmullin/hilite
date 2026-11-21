@@ -49,7 +49,7 @@
   "use strict";
   if (window.hilite) return window.hilite; // included twice: keep the first
 
-  const VERSION = "1.1.1";
+  const VERSION = "1.1.2";
   const MARK = "hilite";
   const UI_ATTR = "data-hilite-ui";
   const DRAG_THRESHOLD_PX = 4;
@@ -805,6 +805,22 @@ body.citing .${MARK} {
   // bug. So there is no text requirement (icon buttons cite fine with an
   // empty `text`) and no lasso-root scoping here; the root knob scopes the
   // lasso, not the single-element fast path.
+  //
+  // The click prefers the hovered element over the click point, with a few
+  // pixels of grace: a press that starts on a pill button and releases 2px
+  // off its rounded corner (or a live re-layout that shifts the button
+  // under a stationary cursor) still cites the outlined control the user
+  // was looking at, instead of the giant row behind it.
+  //
+  // The preference walks UP, not down: the outline is often on a glyph
+  // inside the control (`i` in `button`), and the point lands on the
+  // control's own padding — inside the button's box but outside the
+  // glyph's. The walk stops past a real control, so text elements still
+  // resolve to whatever is actually under the point. A click genuinely
+  // elsewhere misses every chain box and cites the point — the grace is
+  // a bound on the outline's authority, not a fallback.
+  const CLICK_GRACE_PX = 4;
+  const CLICK_CHAIN_DEPTH = 2;
   const selectable = (el) => {
     if (!(el instanceof Element) || el.closest(`[${UI_ATTR}]`)) return null;
     const rect = el.getBoundingClientRect();
@@ -826,9 +842,37 @@ body.citing .${MARK} {
         return;
       }
       // Prefer the element the hover outline is on -- that is the one the user
-      // is aiming at -- and fall back to hit-testing the click point.
+      // is aiming at -- and fall back to hit-testing the click point. The
+      // outline wins only while the point is still on it (plus grace): a
+      // stale outline from before a scroll or a long move must not override
+      // a click that genuinely landed elsewhere.
+      //
+      // The walk ascends past the outline itself because the outline is
+      // often on a glyph inside the control (`i` in `button`) while the
+      // point lands on the control's own padding. Past the control the
+      // walk stops: text elements ascend to whatever merely contains
+      // them, and the point's own element is the better answer there.
+      const CONTROL_ROLES = new Set(["button", "link", "checkbox", "radio", "switch", "tab"]);
+      const nearChain = (el, x, y) => {
+        let node = el instanceof Element ? el : null;
+        for (let d = 0; d <= CLICK_CHAIN_DEPTH && node; d++) {
+          const tag = node.tagName;
+          if (d > 0 && !(tag === "BUTTON" || tag === "A" || tag === "INPUT" || tag === "SELECT" || tag === "TEXTAREA" || tag === "LABEL" || tag === "SUMMARY" || CONTROL_ROLES.has(node.getAttribute && node.getAttribute("role")))) {
+            break;
+          }
+          const r = node.getBoundingClientRect();
+          const m = CLICK_GRACE_PX;
+          if (x >= r.left - m && x <= r.right + m && y >= r.top - m && y <= r.bottom + m) {
+            const hit = selectable(node);
+            if (hit) return hit;
+          }
+          node = node.parentElement;
+        }
+        return null;
+      };
       const el =
-        selectable(target) ?? selectable(document.elementFromPoint(e.clientX, e.clientY));
+        nearChain(target, e.clientX, e.clientY) ??
+        selectable(document.elementFromPoint(e.clientX, e.clientY));
       if (!el) {
         flash("nothing to select here");
         return;
