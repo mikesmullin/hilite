@@ -53,7 +53,7 @@
   "use strict";
   if (window.hilite) return window.hilite; // included twice: keep the first
 
-  const VERSION = "1.1.4";
+  const VERSION = "1.1.5";
   const MARK = "hilite";
   const UI_ATTR = "data-hilite-ui";
   const DRAG_THRESHOLD_PX = 4;
@@ -191,6 +191,11 @@ body.citing .${MARK} {
   border-radius: 3px;
   box-shadow: 0 0 0 2px rgba(245,197,24,.60);
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--hl-mark) 60%, transparent);
+  /* A cited element shows at full strength: apps dim disabled controls
+     with opacity (which also dims any mark the element paints itself),
+     and the dimming rule usually outranks this one, hence !important.
+     Disarming restores the app's own look. */
+  opacity: 1 !important;
   /* Citations often land on inline <code>/<a> runs that wrap across lines, and
      without this a ring is drawn only at the very start and end of the run. */
   -webkit-box-decoration-break: clone;
