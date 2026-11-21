@@ -53,7 +53,7 @@
   "use strict";
   if (window.hilite) return window.hilite; // included twice: keep the first
 
-  const VERSION = "1.1.3";
+  const VERSION = "1.1.4";
   const MARK = "hilite";
   const UI_ATTR = "data-hilite-ui";
   const DRAG_THRESHOLD_PX = 4;
@@ -749,7 +749,14 @@ body.citing .${MARK} {
       // outline + Enter selects disabled buttons, disabled inputs and any
       // other element a press cannot reach. Never while typing.
       if ((key === "enter" || key === " ") && armed) {
-        if (inForm(e.target) || inForm(document.activeElement)) return;
+        // Typing wins: Enter sends the message, Space types a space. But
+        // silence here feels exactly like the disabled-button bug (press
+        // vanishes, nothing cited), so when the outline is sitting on
+        // something citable, say what to do instead of saying nothing.
+        if (inForm(e.target) || inForm(document.activeElement)) {
+          if (target) flash("click empty space first — then Enter cites the outline");
+          return;
+        }
         e.preventDefault();
         const el = selectable(target);
         if (!el) {
