@@ -29,6 +29,7 @@ changes, so browsers don't keep serving a cached older generation.
 | click              | toggle the hovered element in/out of the current citation group — updates `.hilite` marks and copies the aggregate fenced report |
 | right-click (armed)| clear the current group's selection (marks and retained data) and copy the updated report |
 | `n` (while armed)  | clear the current selection and start the next citation group — citations already made are retained in the report |
+| `p` (while armed)  | move the prospective target (the hover outline) to its parent element — press again to climb another level; moving the mouse re-targets by hover, which undoes it |
 | click + drag       | lasso — the *outermost fully-contained* elements are added to the current group, marked `.hilite`, and the aggregate report goes to the clipboard |
 
 The marks of the *current* group survive disarming: that is the handle an
@@ -149,6 +150,11 @@ highlight colour) to override.
   mouse press on a disabled button, so no click handler can fire — but
   hover still tracks it, and the keyboard has no such gate.
   The lasso stays root-scoped.
+- **Parent promotion is unpinned.** `p` moves the hover outline to the
+  parent, and everything that reads the outline (the panel, click, Enter)
+  follows it — but the next mouse move re-runs the hover hit-test and snaps
+  the outline back to whatever is under the pointer. The pointer itself is
+  the undo; no extra state, no mode.
 - **Lasso falls back to textless elements.** The first pass matches only
   elements with rendered text; when that finds nothing, a second pass
   matches the outermost fully-contained elements regardless of text, so

@@ -33,6 +33,10 @@
 //   n            while armed: clear the current selection (its .hilite marks)
 //                and move to the next citation group. Citations already made
 //                are retained in the report. Groups start at 1.
+//   p            while armed: move the prospective target (the hover outline)
+//                to its parent element; press again to climb another level.
+//                Deliberately unpinned: the next mouse move re-targets by
+//                hover, so moving the mouse is the undo.
 //   click+drag   lasso; the outermost fully-contained elements are added to the
 //                current group, marked .hilite, and the report goes to the clipboard
 //
@@ -53,7 +57,7 @@
   "use strict";
   if (window.hilite) return window.hilite; // included twice: keep the first
 
-  const VERSION = "1.1.5";
+  const VERSION = "1.2.0";
   const MARK = "hilite";
   const UI_ATTR = "data-hilite-ui";
   const DRAG_THRESHOLD_PX = 4;
@@ -319,7 +323,7 @@ body.citing .${MARK} {
     '<div><dt>scroll</dt><dd class="f-scroll"></dd></div>' +
     '<div><dt>text</dt><dd class="f-text"></dd></div>' +
     "</dl>" +
-    '<div class="hilite-hint">click&nbsp;=&nbsp;toggle &nbsp;·&nbsp; enter&nbsp;=&nbsp;cite hovered &nbsp;·&nbsp; right-click&nbsp;=&nbsp;clear &nbsp;·&nbsp; drag&nbsp;=&nbsp;lasso+copy &nbsp;·&nbsp; n&nbsp;=&nbsp;new group</div>';
+    '<div class="hilite-hint">click&nbsp;=&nbsp;toggle &nbsp;·&nbsp; enter&nbsp;=&nbsp;cite hovered &nbsp;·&nbsp; right-click&nbsp;=&nbsp;clear &nbsp;·&nbsp; drag&nbsp;=&nbsp;lasso+copy &nbsp;·&nbsp; p&nbsp;=&nbsp;parent &nbsp;·&nbsp; n&nbsp;=&nbsp;new group</div>';
 
   const lasso = ui("div", "hilite-lasso");
   const toast = ui("div", "hilite-toast");
@@ -746,6 +750,19 @@ body.citing .${MARK} {
         nextGroup();
         return;
       }
+      // `p` promotes the prospective target one level: the outline moves from
+      // the hovered element to its parent, the panel re-describes it, and a
+      // click or Enter now cites the parent — everything already follows
+      // `target`. The promotion is deliberately unpinned: the next mouse move
+      // re-runs the hover hit-test and snaps the outline back to whatever is
+      // under the pointer, so moving the mouse undoes it. A still pointer and
+      // another `p` climbs again. Never while typing.
+      if (key === "p" && key !== cfg.key && armed) {
+        if (inForm(e.target) || inForm(document.activeElement)) return;
+        e.preventDefault();
+        promoteTarget();
+        return;
+      }
       // Enter/Space cites whatever the hover outline is on. Mouse presses
       // never reach a disabled control — the browser suppresses mousedown,
       // mouseup and click on them entirely, so no click handler can fire —
@@ -789,6 +806,25 @@ body.citing .${MARK} {
     },
     true,
   );
+
+  // Move the prospective target up one level. This is just a different hover
+  // target — the outline, the panel, and the click/Enter preference all
+  // follow `target`, so a citation after a promotion lands on the parent
+  // exactly as hovering it would have.
+  function promoteTarget() {
+    if (!target) {
+      flash("hover something first");
+      return;
+    }
+    const el = selectable(target.parentElement);
+    if (!el) {
+      flash("no parent to promote to");
+      return;
+    }
+    setTarget(el);
+    describe(el);
+    flash("parent → " + tagOf(el));
+  }
 
   function nextGroup() {
     // Clear the visible selection (its .hilite marks); the citation data is
@@ -1019,7 +1055,8 @@ body.citing .${MARK} {
       `and resets to group 1. Hover for a reference. A click toggles the hovered element in/out ` +
       `of the current citation group (Enter/Space cites it too — the only way to cite a ` +
       `disabled control, whose clicks the browser swallows), a lasso adds its matches, and the aggregate triple-backticked ` +
-      `report goes to the clipboard. Right-click clears the current group's selection. Press N while ` +
+      `report goes to the clipboard. Press P to move the outline to its parent (moving the mouse ` +
+      `undoes it). Right-click clears the current group's selection. Press N while ` +
       `armed to clear the visible marks and start the next group (citations are retained in the ` +
       `report). Esc disarms but keeps the current group's marks on the DOM, hidden (E re-arms ` +
       `fresh). window.hilite.last holds the last copy; window.hilite.report() rebuilds the ` +
@@ -1029,7 +1066,7 @@ body.citing .${MARK} {
   if (cfg.enabled)
     console.info(
       `hilite v${VERSION}: press ${cfg.key.toUpperCase()} to inspect and cite, N for the next citation ` +
-        "group, Esc to exit. window.hilite for the API.",
+        "group, P for the parent, Esc to exit. window.hilite for the API.",
     );
   else
     console.info(
